@@ -17,9 +17,13 @@ class Float {
 }
 
 class Serializer {
+  final _codec = Utf8Codec();
+  final DataWriter _writer;
+  final ExtEncoder? _extEncoder;
+
   Serializer({
-    DataWriter dataWriter,
-    ExtEncoder extEncoder,
+    DataWriter? dataWriter,
+    ExtEncoder? extEncoder,
   })  : _writer = dataWriter ?? DataWriter(),
         _extEncoder = extEncoder;
 
@@ -31,10 +35,10 @@ class Serializer {
     if (d is double) return _writeDouble(d);
     if (d is String) return _writeString(d);
     if (d is Uint8List) return _writeBinary(d);
+    if (d is Iterable) return _writeIterable(d);
     if (d is ByteData)
       return _writeBinary(
           d.buffer.asUint8List(d.offsetInBytes, d.lengthInBytes));
-    if (d is List) return _writeArray(d);
     if (d is Map) return _writeMap(d);
     if (_extEncoder != null && _writeExt(d)) {
       return;
@@ -129,8 +133,8 @@ class Serializer {
     _writer.writeBytes(buffer);
   }
 
-  void _writeArray(List array) {
-    final length = array.length;
+  void _writeIterable(Iterable iterable) {
+    final length = iterable.length;
 
     if (length <= 0xF) {
       _writer.writeUint8(0x90 | length);
@@ -144,7 +148,7 @@ class Serializer {
       throw FormatError("Array is too big to be serialized with msgpack");
     }
 
-    for (final item in array) {
+    for (final item in iterable) {
       encode(item);
     }
   }
@@ -171,13 +175,14 @@ class Serializer {
   }
 
   bool _writeExt(dynamic object) {
-    int type = _extEncoder.extTypeForObject(object);
+    int? type = _extEncoder?.extTypeForObject(object);
     if (type != null) {
       if (type < 0) {
         throw FormatError("Negative ext type is reserved");
       }
-      final encoded = _extEncoder.encodeObject(object);
-      assert(encoded != null);
+      final encoded = _extEncoder?.encodeObject(object);
+      if (encoded == null)
+        throw FormatError('Unable to encode object. No Encoder specified.');
 
       final length = encoded.length;
       if (length == 1) {
@@ -192,7 +197,7 @@ class Serializer {
         _writer.writeUint8(0xd8);
       } else if (length <= 0xFF) {
         _writer.writeUint8(0xc7);
-        _writer.writeUint16(length);
+        _writer.writeUint8(length);
       } else if (length <= 0xFFFF) {
         _writer.writeUint8(0xc8);
         _writer.writeUint16(length);
@@ -208,8 +213,4 @@ class Serializer {
     }
     return false;
   }
-
-  final _codec = Utf8Codec();
-  final DataWriter _writer;
-  final ExtEncoder _extEncoder;
 }
